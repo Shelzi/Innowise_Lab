@@ -1,16 +1,20 @@
 package com.shelzi.jdbcmigrate;
 
+import com.shelzi.jdbcmigrate.utils.LoggerFactory;
 import com.shelzi.jdbcmigrate.utils.PropertiesUtils;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.Logger;
 import org.flywaydb.core.Flyway;
 
 import java.io.IOException;
 import java.util.Properties;
-import java.util.SplittableRandom;
 
 public class MigrationTool {
-    public static void main(String[] args) {
+    private static final Logger logger = LoggerFactory.getLogger(MigrationTool.class);
+
+    public static void main(String[] args) throws InterruptedException {
         if (args.length < 1) {
-            System.err.println("Usage: java -jar myapp.jar path-to-properties-file");
+            logger.log(Level.ERROR, "Usage: java -jar myapp.jar path-to-properties-file");
             return;
         }
 
@@ -37,7 +41,8 @@ public class MigrationTool {
 
             flyway.migrate();
 
-            System.out.println("Миграции успешно применены!");
+            logger.log(Level.DEBUG, "Succesful migration.");
+
         } catch (IOException e) {
             throw new RuntimeException(e);  // заменить на кастомное исключение
         }
