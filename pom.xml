@@ -29,9 +29,17 @@
             <version>10.4.1</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/org.flywaydb/flyway-core -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <version>10.21.0</version>
+        </dependency>
     </dependencies>
 
-    <build>
+
+    <!--тестировал флайвей на старте через мавен-->
+<!--    <build>
         <plugins>
             <plugin>
                 <groupId>org.flywaydb</groupId>
@@ -39,6 +47,6 @@
                 <version>10.21.0</version>
             </plugin>
         </plugins>
-    </build>
+    </build>-->
 
 </project>
