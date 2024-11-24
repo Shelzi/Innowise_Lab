@@ -1,4 +1,4 @@
-package com.shelzi.jdbcmigrate.utils;
+package com.shelzi.jdbcmigrate.util;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
