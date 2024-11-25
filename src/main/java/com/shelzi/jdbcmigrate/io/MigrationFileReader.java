@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class MigrationFileReader {
 
@@ -23,21 +24,23 @@ public class MigrationFileReader {
             throw new IOException("Директория миграций не существует или не является директорией: " + directory);
         }
 
-        return Files.walk(migrationPath)
-                .filter(Files::isRegularFile)
-                .filter(path -> path.getFileName().toString().matches("^V[\\d._]+__.+\\.sql$"))
-                .sorted((path1, path2) -> {
-                    String fileName1 = path1.getFileName().toString();
-                    String fileName2 = path2.getFileName().toString();
+        try (Stream<Path> stream = Files.walk(migrationPath)) { // Используем try-with-resources
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().matches("^V[\\d._]+__.+\\.sql$"))
+                    .sorted((path1, path2) -> {
+                        String fileName1 = path1.getFileName().toString();
+                        String fileName2 = path2.getFileName().toString();
 
-                    // Извлекаем номер версии из имени файла
-                    String version1 = extractVersion(fileName1);
-                    String version2 = extractVersion(fileName2);
+                        // Извлекаем номер версии из имени файла
+                        String version1 = extractVersion(fileName1);
+                        String version2 = extractVersion(fileName2);
 
-                    // Сравниваем версии
-                    return compareVersions(version1, version2);
-                })
-                .collect(Collectors.toList());
+                        // Сравниваем версии
+                        return compareVersions(version1, version2);
+                    })
+                    .collect(Collectors.toList());
+        } // Поток автоматически закрывается здесь
     }
 
     /**
