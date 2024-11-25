@@ -2,6 +2,7 @@ package com.shelzi.jdbcmigrate.controller;
 
 import com.shelzi.jdbcmigrate.database.ConnectionCreator;
 import com.shelzi.jdbcmigrate.database.ConnectionFactory;
+import com.shelzi.jdbcmigrate.exception.MigrationException;
 import com.shelzi.jdbcmigrate.exception.SchemaNotFoundException;
 import com.shelzi.jdbcmigrate.util.LoggerFactory;
 import com.shelzi.jdbcmigrate.util.PropertiesUtil;
@@ -47,7 +48,7 @@ public class MigrationToolImpl implements MigrationTool {
                 String migrationDirectory = properties.getProperty("migration.directory");
                 
                 // Инициализируем менеджер миграций
-                MigrationManager migrationManager = new MigrationManager(connection, migrationDirectory, properties);
+                MigrationManager migrationManager = new MigrationManager(connection, migrationDirectory);
 
                 // Применяем миграции
                 migrationManager.applyMigrations();
@@ -60,7 +61,7 @@ public class MigrationToolImpl implements MigrationTool {
             logger.log(Level.ERROR, "Ошибка подключения к базе данных: " + e.getMessage());
         } catch (IOException e) {
             logger.log(Level.ERROR, "Ошибка при работе с файлами конфигурации или миграций: " + e.getMessage());
-        } catch (SchemaNotFoundException e) {
+        } catch (MigrationException e) {
             logger.log(Level.ERROR, "No such schema found in database: " + e.getMessage());
         }
     }

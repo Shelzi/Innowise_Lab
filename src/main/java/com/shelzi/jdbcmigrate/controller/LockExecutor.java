@@ -1,5 +1,6 @@
 package com.shelzi.jdbcmigrate.controller;
 
+import java.lang.management.ManagementFactory;
 import java.sql.*;
 
 public class LockExecutor {
@@ -9,90 +10,95 @@ public class LockExecutor {
         this.connection = connection;
     }
 
-    private boolean acquireLock() throws SQLException {
-        String insertLockSQL = "INSERT INTO migration_lock (lock_id) VALUES (1)";
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute(insertLockSQL);
-            return true;
+    boolean acquireLock() throws SQLException {
+        ensureLockTableExists();
+
+        String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+
+        String insertSQL = "INSERT INTO migration_lock (lock_id, locked_at, pid) VALUES (1, ?, ?)";
+
+        try (PreparedStatement pstmt = connection.prepareStatement(insertSQL)) {
+            pstmt.setTimestamp(1, new Timestamp(System.currentTimeMillis())); // todo уточнить вопрос с таймзонами
+            pstmt.setString(2, pid);
+            pstmt.executeUpdate();
+            return true; // Блокировка успешно установлена
         } catch (SQLException e) {
-            if (isDuplicateKeyError(e)) {
+            // Проверяем, что блокировка уже существует
+            if (e.getSQLState().startsWith("23")) { // Код SQLState для нарушения уникального ограничения, я проверил, это для всех так
+                // Проверяем, не истекла ли блокировка
                 if (isLockExpired()) {
-                    releaseLock();
-                    return acquireLock();
+                    // Попробуем удалить старую блокировку и установить новую
+                    releaseLock(); // Освобождаем блокировку (она истекла)
+                    return acquireLock(); // Рекурсивно пытаемся установить блокировку снова
                 } else {
-                    return false;
+                    return false; // Блокировка занята другим процессом
                 }
             } else {
-                throw e;
+                throw e; // Перебрасываем другие исключения
             }
         }
     }
 
-    private void refreshLock() throws SQLException {
-        String updateLockSQL = "UPDATE migration_lock SET locked_at = ? WHERE lock_id = 1";
-        try (PreparedStatement pstmt = connection.prepareStatement(updateLockSQL)) {
-            pstmt.setTimestamp(1, new Timestamp(System.currentTimeMillis())); //todo время может быть в разных часовых поясах.
+    void refreshLock() throws SQLException {
+        String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+
+        String updateSQL = "UPDATE migration_lock SET locked_at = ? WHERE lock_id = 1 AND pid = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(updateSQL)) {
+            pstmt.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
+            pstmt.setString(2, pid);
+            int updatedRows = pstmt.executeUpdate();
+            if (updatedRows == 0) {
+                throw new SQLException("Не удалось обновить блокировку. Она принадлежит другому процессу или была снята.");
+            }
+        }
+    }
+
+    boolean checkLockOwnership() throws SQLException {
+        String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+
+        String selectSQL = "SELECT pid FROM migration_lock WHERE lock_id = 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(selectSQL)) {
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                String lockPid = rs.getString("pid");
+                return pid.equals(lockPid);
+            } else {
+                return false; // Блокировка не существует
+            }
+        }
+    }
+
+    void releaseLock() throws SQLException {
+        String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+
+        String deleteSQL = "DELETE FROM migration_lock WHERE lock_id = 1 AND pid = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(deleteSQL)) {
+            pstmt.setString(1, pid);
             pstmt.executeUpdate();
         }
     }
 
-
-    private void releaseLock() throws SQLException {
-        String deleteLockSQL = "DELETE FROM migration_lock WHERE lock_id = 1";
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute(deleteLockSQL);
-        }
-    }
-
     private boolean isLockExpired() throws SQLException {
-        String query = "SELECT locked_at FROM migration_lock WHERE lock_id = 1";
-        try (Statement stmt = connection.createStatement()) {
-            ResultSet rs = stmt.executeQuery(query);
+        String selectSQL = "SELECT locked_at FROM migration_lock WHERE lock_id = 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(selectSQL)) {
+            ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
                 Timestamp lockedAt = rs.getTimestamp("locked_at");
                 long lockDuration = System.currentTimeMillis() - lockedAt.getTime();
-                // Устанавливаем тайм-аут блокировки, например, 5 минут
-                return lockDuration > 5 * 60 * 1000;
+                return lockDuration > 5 * 60 * 1000; // Тайм-аут блокировки 5 минут
+            } else {
+                return true; // Блокировка не существует
             }
         }
-        return false;
     }
 
-    private boolean isDuplicateKeyError(SQLException e) { //todo возможно не надо когда появится состояние лока
-        String sqlState = e.getSQLState();
-        int errorCode = e.getErrorCode();
-        String dbProductName = null;
-        try {
-            dbProductName = connection.getMetaData().getDatabaseProductName().toLowerCase();
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);  //todo handel this mf
-        }
-
-        // PostgreSQL и H2
-        if (dbProductName.contains("postgresql") || dbProductName.contains("h2")) {
-            return "23505".equals(sqlState);
-        }
-        // MySQL
-        else if (dbProductName.contains("mysql")) {
-            return errorCode == 1062;
-        }
-        // SQLite (если поддерживается)
-        else if (dbProductName.contains("sqlite")) {
-            return "SQLITE_CONSTRAINT_UNIQUE".equals(e.getMessage());
-        }
-        // Другие базы данных
-        else {
-            // Обработка по умолчанию
-            return "23000".equals(sqlState);
-        }
-    }
-
-    private void ensureLockTableExists() throws SQLException {
+    void ensureLockTableExists() throws SQLException {
         String createTableSQL = """
             CREATE TABLE IF NOT EXISTS migration_lock (
-                lock_id INT PRIMARY KEY,
-                locked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
+                  lock_id INT PRIMARY KEY,
+                  locked_at TIMESTAMP NOT NULL,
+                  pid VARCHAR(100) NOT NULL
+              );
         """;
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createTableSQL);
