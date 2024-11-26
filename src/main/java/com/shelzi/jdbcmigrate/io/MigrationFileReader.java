@@ -1,5 +1,7 @@
 package com.shelzi.jdbcmigrate.io;
 
+import com.shelzi.jdbcmigrate.exception.MigrationFileReaderException;
+
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
@@ -7,26 +9,16 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class MigrationFileReader {
-
-    /**
-     * Получает список файлов миграций из указанной директории.
-     * Файлы миграций должны соответствовать шаблону: V{номер}__{описание}.sql
-     * Пример: V1_0__initial_setup.sql
-     *
-     * @param directory путь к директории с миграциями
-     * @return отсортированный список путей к файлам миграций
-     * @throws IOException если возникает ошибка при чтении файлов
-     */
-    public static List<Path> getMigrationFiles(String directory) throws IOException {
+    public static List<Path> getMigrationFiles(String directory) throws MigrationFileReaderException {
         Path migrationPath = Paths.get(directory);
 
         if (!Files.exists(migrationPath) || !Files.isDirectory(migrationPath)) {
-            throw new IOException("Директория миграций не существует или не является директорией: " + directory);
+            throw new MigrationFileReaderException(
+                    "The migrations directory does not exist or is not a directory: " + directory);
         }
 
-        try (Stream<Path> stream = Files.walk(migrationPath)) { // Используем try-with-resources
-            return stream
-                    .filter(Files::isRegularFile)
+        try (Stream<Path> stream = Files.walk(migrationPath)) {
+            return stream.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().matches("^V[\\d._]+__.+\\.sql$"))
                     .sorted((path1, path2) -> {
                         String fileName1 = path1.getFileName().toString();
@@ -38,41 +30,22 @@ public class MigrationFileReader {
 
                         // Сравниваем версии
                         return compareVersions(version1, version2);
-                    })
+                    }) // if only one migration - comparator not will be called - skip everything
                     .collect(Collectors.toList());
-        } // Поток автоматически закрывается здесь
+        } catch (IOException e) {
+            throw new MigrationFileReaderException("Wrong path or access violation while trying to get migration: " + e);
+        }
     }
 
-    /**
-     * Читает содержимое файла миграции.
-     *
-     * @param filePath путь к файлу миграции
-     * @return содержимое файла в виде строки
-     * @throws IOException если возникает ошибка при чтении файла
-     */
     public static String readFile(Path filePath) throws IOException {
         return Files.readString(filePath);
     }
 
-    /**
-     * Извлекает номер версии из имени файла миграции.
-     * Пример: V1_0__initial_setup.sql -> "1_0"
-     *
-     * @param fileName имя файла миграции
-     * @return номер версии в виде строки
-     */
     private static String extractVersion(String fileName) {
         String versionPart = fileName.split("__")[0]; // "V1_0"
         return versionPart.substring(1); // удаляем "V" и получаем "1_0"
     }
 
-    /**
-     * Сравнивает две версии, разделяя их на части по символам '.', '_', '-'.
-     *
-     * @param version1 первая версия
-     * @param version2 вторая версия
-     * @return отрицательное число, если version1 < version2; 0, если version1 == version2; положительное число, если version1 > version2
-     */
     private static int compareVersions(String version1, String version2) {
         String[] parts1 = version1.split("[._-]");
         String[] parts2 = version2.split("[._-]");
@@ -89,12 +62,6 @@ public class MigrationFileReader {
         return 0;
     }
 
-    /**
-     * Парсит часть версии в целое число.
-     *
-     * @param part часть версии
-     * @return целое число, представляющее часть версии
-     */
     private static int parseVersionPart(String part) {
         try {
             return Integer.parseInt(part);

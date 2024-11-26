@@ -19,45 +19,45 @@ public class MigrationHelper {
 
         if (dbProductName.contains("postgresql")) {
             createTableSQL = """
-            CREATE TABLE IF NOT EXISTS migration_history (
-                id SERIAL PRIMARY KEY,
-                version VARCHAR(100) NOT NULL UNIQUE,
-                applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                successful BOOLEAN NOT NULL DEFAULT FALSE,
-                checksum VARCHAR(64)
-            );
-        """;
+                        CREATE TABLE IF NOT EXISTS migration_history (
+                            id SERIAL PRIMARY KEY,
+                            version VARCHAR(100) NOT NULL UNIQUE,
+                            applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            successful BOOLEAN NOT NULL DEFAULT FALSE,
+                            checksum VARCHAR(64)
+                        );
+                    """;
         } else if (dbProductName.contains("mysql")) {
             createTableSQL = """
-            CREATE TABLE IF NOT EXISTS migration_history (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                version VARCHAR(100) NOT NULL UNIQUE,
-                applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                successful BOOLEAN NOT NULL DEFAULT FALSE,
-                checksum VARCHAR(64)
-            );
-        """;
+                        CREATE TABLE IF NOT EXISTS migration_history (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            version VARCHAR(100) NOT NULL UNIQUE,
+                            applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                            successful BOOLEAN NOT NULL DEFAULT FALSE,
+                            checksum VARCHAR(64)
+                        );
+                    """;
         } else if (dbProductName.contains("h2")) {
             createTableSQL = """
-            CREATE TABLE IF NOT EXISTS migration_history (
-                id INTEGER AUTO_INCREMENT PRIMARY KEY,
-                version VARCHAR(100) NOT NULL UNIQUE,
-                applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP(),
-                successful BOOLEAN NOT NULL DEFAULT FALSE,
-                checksum VARCHAR(64)
-            );
-        """;
+                        CREATE TABLE IF NOT EXISTS migration_history (
+                            id INTEGER AUTO_INCREMENT PRIMARY KEY,
+                            version VARCHAR(100) NOT NULL UNIQUE,
+                            applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+                            successful BOOLEAN NOT NULL DEFAULT FALSE,
+                            checksum VARCHAR(64)
+                        );
+                    """;
         } else {
             // По умолчанию используем синтаксис для MySQL
             createTableSQL = """
-            CREATE TABLE IF NOT EXISTS migration_history (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                version VARCHAR(100) NOT NULL UNIQUE,
-                applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                successful BOOLEAN NOT NULL DEFAULT FALSE,
-                checksum VARCHAR(64)
-            );
-        """;
+                        CREATE TABLE IF NOT EXISTS migration_history (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            version VARCHAR(100) NOT NULL UNIQUE,
+                            applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                            successful BOOLEAN NOT NULL DEFAULT FALSE,
+                            checksum VARCHAR(64)
+                        );
+                    """;
         }
 
         try (Statement stmt = connection.createStatement()) {
