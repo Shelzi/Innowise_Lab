@@ -1,16 +1,24 @@
 package com.shelzi.jdbcmigrate.controller;
 
+import com.shelzi.jdbcmigrate.exception.LockException;
+import com.shelzi.jdbcmigrate.util.LoggerFactory;
+import org.apache.logging.log4j.Logger;
+
 import java.lang.management.ManagementFactory;
 import java.sql.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class LockExecutor {
     private final Connection connection;
+    private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     public LockExecutor(Connection connection) {
         this.connection = connection;
     }
 
-    boolean acquireLock() throws SQLException {
+    boolean acquireLock() throws SQLException, LockException {
         ensureLockTableExists();
 
         String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
@@ -25,16 +33,14 @@ public class LockExecutor {
         } catch (SQLException e) {
             // Проверяем, что блокировка уже существует
             if (e.getSQLState().startsWith("23")) { // Код SQLState для нарушения уникального ограничения, я проверил, это для всех так
-                // Проверяем, не истекла ли блокировка
                 if (isLockExpired()) {
-                    // Попробуем удалить старую блокировку и установить новую
-                    releaseLock(); // Освобождаем блокировку (она истекла)
-                    return acquireLock(); // Рекурсивно пытаемся установить блокировку снова
+                    releaseLock();
+                    return acquireLock();
                 } else {
                     return false; // Блокировка занята другим процессом
                 }
             } else {
-                throw e; // Перебрасываем другие исключения
+                throw new LockException("Error with lock table while trying to update it", e);
             }
         }
     }
@@ -48,7 +54,7 @@ public class LockExecutor {
             pstmt.setString(2, pid);
             int updatedRows = pstmt.executeUpdate();
             if (updatedRows == 0) {
-                throw new SQLException("Не удалось обновить блокировку. Она принадлежит другому процессу или была снята.");
+                throw new SQLException("Failed to update the lock. It belongs to another process or has been removed.");
             }
         }
     }
@@ -78,7 +84,7 @@ public class LockExecutor {
         }
     }
 
-    private boolean isLockExpired() throws SQLException {
+    boolean isLockExpired() throws SQLException {
         String selectSQL = "SELECT locked_at FROM migration_lock WHERE lock_id = 1";
         try (PreparedStatement pstmt = connection.prepareStatement(selectSQL)) {
             ResultSet rs = pstmt.executeQuery();
@@ -94,14 +100,29 @@ public class LockExecutor {
 
     void ensureLockTableExists() throws SQLException {
         String createTableSQL = """
-            CREATE TABLE IF NOT EXISTS migration_lock (
-                  lock_id INT PRIMARY KEY,
-                  locked_at TIMESTAMP NOT NULL,
-                  pid VARCHAR(100) NOT NULL
-              );
-        """;
+                    CREATE TABLE IF NOT EXISTS migration_lock (
+                          lock_id INT PRIMARY KEY,
+                          locked_at TIMESTAMP NOT NULL,
+                          pid VARCHAR(100) NOT NULL
+                      );
+                """;
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createTableSQL);
         }
+    }
+
+    ScheduledExecutorService getLockRefresherService(int initialDelay, int c) {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        Runnable refreshLockTask = () -> {
+            try {
+                refreshLock();
+            } catch (SQLException e) {
+                logger.error("Error when updating the lock", e);
+            }
+        };
+
+        // Запускаем задачу обновления блокировки каждые 2 минут
+        scheduler.scheduleAtFixedRate(refreshLockTask, initialDelay, initialDelay, TimeUnit.MINUTES);
+        return scheduler;
     }
 }
